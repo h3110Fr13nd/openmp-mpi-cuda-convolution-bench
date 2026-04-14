@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Run benchmark sweep and write CSV files to benchmarks/raw/."

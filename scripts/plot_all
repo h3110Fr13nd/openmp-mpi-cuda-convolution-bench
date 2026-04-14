@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+uv run python plots/scripts/plot_results.py

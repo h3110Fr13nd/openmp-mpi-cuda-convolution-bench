@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Run sequential/OpenMP/MPI/CUDA executables from build outputs." 
