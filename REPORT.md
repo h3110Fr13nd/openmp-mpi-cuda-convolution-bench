@@ -133,9 +133,11 @@ $$y[i, j, k] = (I \otimes K)[i, j, k] = \sum_{m} \sum_{n} \sum_{p} I[i + m, j + 
 
 getting simpler and complex. I guess.
 
+> Note : Of Course I'm no Expert in writing MathJax and beauty equations, AI surely is helpful for this part here.
 
 ---
 
-All match till now, is it actually useful or helpful. Still why this is important, or what can it actually do.
+All math till now, is it actually useful or helpful. Still why this is important, or what can it actually do. Doesn't make much sense, right?
 
 Let's take an example of blur filter, which is a common application of convolution in image processing.
+
