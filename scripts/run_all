@@ -1,4 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Run sequential/OpenMP/MPI/CUDA executables from build outputs." 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BUILD_DIR="$ROOT_DIR/build"
+INPUT_IMAGE="$ROOT_DIR/data/input/pgm/lena_1024.pgm"
+
+mkdir -p "$ROOT_DIR/results/images"
+
+INPUT_ARGS=()
+if [[ -f "$INPUT_IMAGE" ]]; then
+	INPUT_ARGS=(--input "$INPUT_IMAGE")
+fi
+
+if [[ -x "$BUILD_DIR/seq_convolution" ]]; then
+	"$BUILD_DIR/seq_convolution" --filter blur --kernel-size 5 "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/seq_blur.pgm"
+	"$BUILD_DIR/seq_convolution" --filter sobel "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/seq_sobel.pgm"
+fi
+
+if [[ -x "$BUILD_DIR/omp_convolution" ]]; then
+	OMP_NUM_THREADS=${OMP_NUM_THREADS:-8} "$BUILD_DIR/omp_convolution" --filter blur --kernel-size 5 "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/omp_blur.pgm"
+	OMP_NUM_THREADS=${OMP_NUM_THREADS:-8} "$BUILD_DIR/omp_convolution" --filter sobel "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/omp_sobel.pgm"
+fi
+
+if [[ -x "$BUILD_DIR/omp_target_convolution" ]]; then
+	OMP_NUM_THREADS=${OMP_NUM_THREADS:-8} "$BUILD_DIR/omp_target_convolution" --filter blur --kernel-size 5 "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/omp_target_blur.pgm"
+	OMP_NUM_THREADS=${OMP_NUM_THREADS:-8} "$BUILD_DIR/omp_target_convolution" --filter sobel "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/omp_target_sobel.pgm"
+fi
+
+if [[ -x "$BUILD_DIR/mpi_convolution" ]]; then
+	mpirun -np 4 "$BUILD_DIR/mpi_convolution" --filter blur --kernel-size 5 "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/mpi_blur.pgm"
+	mpirun -np 4 "$BUILD_DIR/mpi_convolution" --filter sobel "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/mpi_sobel.pgm"
+fi
+
+if [[ -x "$BUILD_DIR/mpi_cuda_convolution" ]]; then
+	mpirun -np 4 "$BUILD_DIR/mpi_cuda_convolution" --filter blur --kernel-size 5 "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/mpi_cuda_blur.pgm"
+	mpirun -np 4 "$BUILD_DIR/mpi_cuda_convolution" --filter sobel "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/mpi_cuda_sobel.pgm"
+fi
+
+if [[ -x "$BUILD_DIR/cuda_convolution" ]]; then
+	"$BUILD_DIR/cuda_convolution" --filter blur --kernel-size 5 "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/cuda_blur.pgm"
+	"$BUILD_DIR/cuda_convolution" --filter sobel "${INPUT_ARGS[@]}" --width 1024 --height 1024 --output "$ROOT_DIR/results/images/cuda_sobel.pgm"
+fi

@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cmake -S . -B build
+if [[ "${USE_CLANG:-0}" == "1" ]]; then
+	if [[ ! -e /usr/lib/x86_64-linux-gnu/libomp.so ]]; then
+		echo "libomp not found. Install libomp (e.g., libomp-21-dev) to enable OpenMP target offload." >&2
+		exit 1
+	fi
+	cmake -S . -B build -DCMAKE_CXX_COMPILER=clang++ -DOPENMP_TARGET_NVPTX=ON
+else
+	cmake -S . -B build
+fi
 cmake --build build -j
