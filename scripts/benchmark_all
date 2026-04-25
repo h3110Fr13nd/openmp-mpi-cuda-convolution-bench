@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Run benchmark sweep and write CSV files to benchmarks/raw/."
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$ROOT_DIR/benchmarks/raw"
+
+uv run python "$ROOT_DIR/scripts/fetch_images.py"
+uv run python "$ROOT_DIR/benchmarks/scripts/run_benchmarks.py"
