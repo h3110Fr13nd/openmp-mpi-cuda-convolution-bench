@@ -381,8 +381,7 @@ To make the benchmarks more realistic than synthetic gradients, I downloaded rea
 The source images come from the OpenCV sample dataset and are stored under [data/input/raw](data/input/raw). All converted PGM files live in [data/input/pgm](data/input/pgm).
 
 ### Parameters
-- Filter: **Blur**
-- Kernel size: **5 x 5**
+- Filters: **Blur** (5 x 5) and **Sobel** (3 x 3)
 - Runs per configuration: **3**, using the median time
 - Variable size inputs, not just a single fixed resolution
 
@@ -404,22 +403,36 @@ $$E(p)=\frac{S(p)}{p}=\frac{T_1}{p\,T_p}$$
 
 where $T_1$ is the sequential runtime and $T_p$ is the runtime using $p$ threads or processes.
 
-> Note: The benchmark sweep in this report uses the **blur** filter. If the rubric requires performance evaluation for **both** filters, the same benchmark pipeline should be repeated with Sobel and reported side-by-side.
+Benchmarks are reported **per filter** (blur and sobel) and plotted separately.
 
 ### Best Times per Architecture (Representative Images)
 
-The table below shows the *best* observed runtime for each architecture (minimum over thread/rank configs) on the main resolution sweep. Times are in seconds.
+The tables below show the *best* observed runtime for each architecture (minimum over thread/rank configs). Times are in seconds.
+
+**Blur (5 x 5)**
 
 | Image | Sequential | OpenMP (best) | MPI (best) | CUDA |
 |---|---:|---:|---:|---:|
-| lena_512 | 0.279 | 0.053 | 0.038 | 0.003 |
-| lena_1024 | 1.081 | 0.069 | 0.150 | 0.009 |
-| lena_2048 | 1.947 | 0.277 | 0.573 | 0.034 |
+| lena_512 | 0.084538 | 0.014941 | 0.012180 | 0.001155 |
+| lena_1024 | 0.335804 | 0.063065 | 0.054212 | 0.003807 |
+| lena_2048 | 1.368500 | 0.231367 | 0.209032 | 0.013328 |
+| baboon_512 | 0.084181 | 0.024598 | 0.012424 | 0.001166 |
+| fruits_512 | 0.084276 | 0.015230 | 0.012414 | 0.001178 |
 
-Additional 512×512 textures (`baboon_512`, `fruits_512`) show the same trend: OpenMP and MPI give multi-core speedup, while CUDA is 1–2 orders of magnitude faster.
+**Sobel (3 x 3)**
+
+| Image | Sequential | OpenMP (best) | MPI (best) | CUDA |
+|---|---:|---:|---:|---:|
+| lena_512 | 0.073089 | 0.023855 | 0.010608 | 0.001349 |
+| lena_1024 | 0.288555 | 0.054660 | 0.045643 | 0.004057 |
+| lena_2048 | 1.156720 | 0.218508 | 0.175152 | 0.013822 |
+| baboon_512 | 0.071171 | 0.013910 | 0.010377 | 0.001331 |
+| fruits_512 | 0.069586 | 0.013944 | 0.010247 | 0.001338 |
+
+Both filters show the same trend: OpenMP and MPI give multi-core speedup, while CUDA is 1–2 orders of magnitude faster.
 
 ### Scalability Summary (Representative Example)
-For a single representative input (e.g., `lena_1024` with blur), the scalability tables are provided by the benchmark outputs and visualized in the plots below:
+For a single representative input (e.g., `lena_1024` with blur or sobel), the scalability tables are provided by the benchmark outputs and visualized in the plots below:
 
 - OpenMP runtime, speedup, efficiency vs threads
 - MPI runtime, speedup, efficiency vs ranks
@@ -463,10 +476,6 @@ OpenMP and MPI in this project include **CPU** and **GPU** variants:
 - **MPI (CPU):** distributed memory with CPU computation per rank.
 - **MPI + CUDA (GPU):** each rank computes its block on the GPU, then gathers on CPU.
 
-> Note: OpenMP offload requires a compiler/runtime that supports the target GPU. On this system, `omp_get_num_devices()` returned 0 during runs, so OpenMP Target executed on CPU as a fallback. CUDA and MPI+CUDA do run on the GPU.
-
-To enable OpenMP Target on NVIDIA GPUs here, Clang must be used with `libomp` installed and NVPTX offload enabled (see `USE_CLANG=1` in [scripts/build_all](scripts/build_all)).
-
 So the comparisons now include:
 
 - **CPU vs CPU:** Sequential vs OpenMP vs MPI.
@@ -479,35 +488,49 @@ So the comparisons now include:
 
 Plots were generated in [plots/output](plots/output) and include:
 
-- OpenMP runtime, speedup, efficiency vs threads.
-- MPI runtime, speedup, efficiency vs ranks.
-- **Cross-architecture comparisons** (best runtime and speedup per image).
+**Blur (5 x 5)**
 
-Additional comparison charts:
+![OpenMP runtime (blur)](./plots/output/openmp_time_blur.png)
+![OpenMP speedup (blur)](./plots/output/openmp_speedup_blur.png)
+![OpenMP efficiency (blur)](./plots/output/openmp_efficiency_blur.png)
 
-**CPU-only comparisons**
+![MPI runtime (blur)](./plots/output/mpi_time_blur.png)
+![MPI speedup (blur)](./plots/output/mpi_speedup_blur.png)
+![MPI efficiency (blur)](./plots/output/mpi_efficiency_blur.png)
 
-![CPU-only runtime](./plots/output/cpu_only_runtime.png)
+![CPU-only runtime (blur)](./plots/output/cpu_only_runtime_blur.png)
+![CPU-only speedup (blur)](./plots/output/cpu_only_speedup_blur.png)
 
-![CPU-only speedup](./plots/output/cpu_only_speedup.png)
+![GPU-only runtime (blur)](./plots/output/gpu_only_runtime_blur.png)
+![GPU-only speedup (blur)](./plots/output/gpu_only_speedup_blur.png)
 
-**GPU-only comparisons**
+![CPU vs CUDA runtime (blur)](./plots/output/cpu_vs_cuda_runtime_blur.png)
+![CPU vs CUDA speedup (blur)](./plots/output/cpu_vs_cuda_speedup_blur.png)
 
-![GPU-only runtime](./plots/output/gpu_only_runtime.png)
+![Cross-architecture runtime comparison (blur)](./plots/output/arch_time_comparison_blur.png)
+![Cross-architecture speedup comparison (blur)](./plots/output/arch_speedup_comparison_blur.png)
 
-![GPU-only speedup](./plots/output/gpu_only_speedup.png)
+**Sobel (3 x 3)**
 
-**CPU vs CUDA**
+![OpenMP runtime (sobel)](./plots/output/openmp_time_sobel.png)
+![OpenMP speedup (sobel)](./plots/output/openmp_speedup_sobel.png)
+![OpenMP efficiency (sobel)](./plots/output/openmp_efficiency_sobel.png)
 
-![CPU vs CUDA runtime](./plots/output/cpu_vs_cuda_runtime.png)
+![MPI runtime (sobel)](./plots/output/mpi_time_sobel.png)
+![MPI speedup (sobel)](./plots/output/mpi_speedup_sobel.png)
+![MPI efficiency (sobel)](./plots/output/mpi_efficiency_sobel.png)
 
-![CPU vs CUDA speedup](./plots/output/cpu_vs_cuda_speedup.png)
+![CPU-only runtime (sobel)](./plots/output/cpu_only_runtime_sobel.png)
+![CPU-only speedup (sobel)](./plots/output/cpu_only_speedup_sobel.png)
 
-The cross-architecture charts are:
+![GPU-only runtime (sobel)](./plots/output/gpu_only_runtime_sobel.png)
+![GPU-only speedup (sobel)](./plots/output/gpu_only_speedup_sobel.png)
 
-![Cross-architecture runtime comparison](./plots/output/arch_time_comparison.png)
+![CPU vs CUDA runtime (sobel)](./plots/output/cpu_vs_cuda_runtime_sobel.png)
+![CPU vs CUDA speedup (sobel)](./plots/output/cpu_vs_cuda_speedup_sobel.png)
 
-![Cross-architecture speedup comparison](./plots/output/arch_speedup_comparison.png)
+![Cross-architecture runtime comparison (sobel)](./plots/output/arch_time_comparison_sobel.png)
+![Cross-architecture speedup comparison (sobel)](./plots/output/arch_speedup_comparison_sobel.png)
 
 For interactive exploration, see the notebook [Results_Analysis.ipynb](Results_Analysis.ipynb).
 

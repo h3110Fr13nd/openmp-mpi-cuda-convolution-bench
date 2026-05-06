@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(OPENMP_TARGET_NVPTX "Enable OpenMP target offload to NVIDIA GPUs" OFF)
+set(OPENMP_NVPTX_BC_PATH "" CACHE FILEPATH "Path to libomptarget NVPTX bitcode (e.g., libomptarget-nvptx-sm_86.bc)")
 
 add_library(conv_common
 	src/common/convolution.cpp
@@ -32,17 +33,40 @@ if(OpenMP_CXX_FOUND)
 		if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 			find_package(CUDAToolkit)
 			if(CUDAToolkit_FOUND)
+				if(NOT OPENMP_NVPTX_BC_PATH)
+					foreach(candidate
+						"/usr/lib/llvm-21/lib/nvptx64-nvidia-cuda/libomptarget-nvptx.bc"
+						"/usr/lib/llvm-17/lib/libomptarget-nvptx-sm_86.bc"
+						"/usr/lib/llvm-17/lib/libomptarget-nvptx-sm_80.bc"
+						"/usr/lib/llvm-18/lib/libomptarget-nvptx-sm_86.bc"
+						"/usr/lib/llvm-18/lib/libomptarget-nvptx-sm_80.bc"
+						"/usr/lib/llvm-19/lib/libomptarget-nvptx-sm_86.bc"
+						"/usr/lib/llvm-19/lib/libomptarget-nvptx-sm_80.bc"
+					)
+						if(EXISTS ${candidate})
+							set(OPENMP_NVPTX_BC_PATH ${candidate})
+							break()
+						endif()
+					endforeach()
+				endif()
+
+				if(NOT OPENMP_NVPTX_BC_PATH)
+					message(WARNING "OpenMP NVPTX bitcode not found. Set OPENMP_NVPTX_BC_PATH to libomptarget-nvptx-sm_XX.bc for your GPU.")
+				else()
 				target_compile_options(omp_target_convolution PRIVATE
 					-fopenmp
 					-fopenmp-targets=nvptx64-nvidia-cuda
-					-Xopenmp-target=nvptx64-nvidia-cuda --cuda-path=${CUDAToolkit_ROOT}
+						-Xopenmp-target=nvptx64-nvidia-cuda --cuda-path=${CUDAToolkit_ROOT}
+						-Xopenmp-target=nvptx64-nvidia-cuda --libomptarget-nvptx-bc-path=${OPENMP_NVPTX_BC_PATH}
 				)
 				target_link_options(omp_target_convolution PRIVATE
 					-fopenmp
 					-fopenmp-targets=nvptx64-nvidia-cuda
-					-Xopenmp-target=nvptx64-nvidia-cuda --cuda-path=${CUDAToolkit_ROOT}
+						-Xopenmp-target=nvptx64-nvidia-cuda --cuda-path=${CUDAToolkit_ROOT}
+						-Xopenmp-target=nvptx64-nvidia-cuda --libomptarget-nvptx-bc-path=${OPENMP_NVPTX_BC_PATH}
 				)
 				target_compile_definitions(omp_target_convolution PRIVATE OPENMP_TARGET_NVPTX=1)
+				endif()
 			else()
 				message(WARNING "CUDAToolkit not found; OpenMP target offload disabled.")
 			endif()

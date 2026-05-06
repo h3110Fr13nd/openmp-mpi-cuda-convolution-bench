@@ -35,6 +35,26 @@ def run_command(cmd: List[str], env: Dict[str, str] | None = None) -> float:
     raise RuntimeError(f"No timing info found in output: {proc.stdout}")
 
 
+def parse_omp_target_devices(output: str) -> int | None:
+    for line in output.splitlines():
+        if line.startswith("openmp_target_devices"):
+            return int(line.split(",")[1])
+    return None
+
+
+def probe_omp_target_device(cmd: List[str], env: Dict[str, str]) -> bool:
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    if proc.returncode != 0:
+        print("OpenMP target probe failed; skipping openmp_target benchmarks.")
+        print(proc.stderr.strip())
+        return False
+    devices = parse_omp_target_devices(proc.stdout)
+    if devices is None or devices <= 0:
+        print("OpenMP target offload not detected; skipping openmp_target benchmarks.")
+        return False
+    return True
+
+
 def median_time(cmd: List[str], env: Dict[str, str] | None = None, runs: int = 3) -> float:
     times = [run_command(cmd, env=env) for _ in range(runs)]
     return statistics.median(times)
@@ -65,8 +85,10 @@ def read_pgm_shape(path: Path) -> Tuple[int, int]:
 
 
 def main() -> None:
-    kernel = 5
-    filter_name = "blur"
+    kernel_by_filter = {
+        "blur": 5,
+        "sobel": 3,
+    }
     inputs = [
         PGM_DIR / "lena_512.pgm",
         PGM_DIR / "lena_1024.pgm",
@@ -81,129 +103,155 @@ def main() -> None:
         print("Sequential executable not found.")
         return
 
-    for input_path in inputs:
-        if not input_path.exists():
-            print(f"Missing input image: {input_path}")
-            continue
-
-        width, height = read_pgm_shape(input_path)
-        image_name = input_path.stem
-
-        cmd = [str(exe("seq_convolution")), "--filter", filter_name, "--kernel-size", str(kernel),
-               "--input", str(input_path), "--no-output"]
-        seq_time = median_time(cmd)
-        records.append({
-            "implementation": "sequential",
-            "threads": 1,
-            "ranks": 1,
-            "image": image_name,
-            "width": width,
-            "height": height,
-            "filter": filter_name,
-            "seconds": seq_time,
-            "speedup": 1.0,
-            "efficiency": 1.0,
-        })
-
-        if exe("omp_convolution").exists():
-            for threads in [1, 2, 4, 8, 16]:
-                env = os.environ.copy()
-                env["OMP_NUM_THREADS"] = str(threads)
-                cmd = [str(exe("omp_convolution")), "--filter", filter_name, "--kernel-size", str(kernel),
-                       "--input", str(input_path), "--no-output"]
-                omp_time = median_time(cmd, env=env)
-                speedup = seq_time / omp_time
-                records.append({
-                    "implementation": "openmp",
-                    "threads": threads,
-                    "ranks": 1,
-                    "image": image_name,
-                    "width": width,
-                    "height": height,
-                    "filter": filter_name,
-                    "seconds": omp_time,
-                    "speedup": speedup,
-                    "efficiency": speedup / threads,
-                })
-
+    for filter_name, kernel in kernel_by_filter.items():
+        omp_target_available = False
         if exe("omp_target_convolution").exists():
-            for threads in [1, 2, 4, 8, 16]:
+            probe_input = next((p for p in inputs if p.exists()), None)
+            if probe_input is None:
+                print("No input images available to probe OpenMP target offload.")
+            else:
                 env = os.environ.copy()
-                env["OMP_NUM_THREADS"] = str(threads)
-                cmd = [str(exe("omp_target_convolution")), "--filter", filter_name, "--kernel-size", str(kernel),
-                       "--input", str(input_path), "--no-output"]
-                omp_t_time = median_time(cmd, env=env)
-                speedup = seq_time / omp_t_time
-                records.append({
-                    "implementation": "openmp_target",
-                    "threads": threads,
-                    "ranks": 1,
-                    "image": image_name,
-                    "width": width,
-                    "height": height,
-                    "filter": filter_name,
-                    "seconds": omp_t_time,
-                    "speedup": speedup,
-                    "efficiency": speedup / threads,
-                })
+                env["OMP_TARGET_OFFLOAD"] = "MANDATORY"
+                env.setdefault("OMP_DEFAULT_DEVICE", "0")
+                probe_cmd = [
+                    str(exe("omp_target_convolution")),
+                    "--filter",
+                    filter_name,
+                    "--kernel-size",
+                    str(kernel),
+                    "--input",
+                    str(probe_input),
+                    "--no-output",
+                    "--iterations",
+                    "1",
+                ]
+                omp_target_available = probe_omp_target_device(probe_cmd, env)
 
-        if exe("mpi_convolution").exists():
-            for ranks in [1, 2, 4, 8]:
-                cmd = ["mpirun", "-np", str(ranks), str(exe("mpi_convolution")),
-                       "--filter", filter_name, "--kernel-size", str(kernel),
-                       "--input", str(input_path), "--no-output"]
-                mpi_time = median_time(cmd)
-                speedup = seq_time / mpi_time
-                records.append({
-                    "implementation": "mpi",
-                    "threads": 1,
-                    "ranks": ranks,
-                    "image": image_name,
-                    "width": width,
-                    "height": height,
-                    "filter": filter_name,
-                    "seconds": mpi_time,
-                    "speedup": speedup,
-                    "efficiency": speedup / ranks,
-                })
+        for input_path in inputs:
+            if not input_path.exists():
+                print(f"Missing input image: {input_path}")
+                continue
 
-        if exe("mpi_cuda_convolution").exists():
-            for ranks in [1, 2, 4, 8]:
-                cmd = ["mpirun", "-np", str(ranks), str(exe("mpi_cuda_convolution")),
-                       "--filter", filter_name, "--kernel-size", str(kernel),
-                       "--input", str(input_path), "--no-output"]
-                mpi_cuda_time = median_time(cmd)
-                speedup = seq_time / mpi_cuda_time
-                records.append({
-                    "implementation": "mpi_cuda",
-                    "threads": 1,
-                    "ranks": ranks,
-                    "image": image_name,
-                    "width": width,
-                    "height": height,
-                    "filter": filter_name,
-                    "seconds": mpi_cuda_time,
-                    "speedup": speedup,
-                    "efficiency": speedup / ranks,
-                })
+            width, height = read_pgm_shape(input_path)
+            image_name = input_path.stem
 
-        if exe("cuda_convolution").exists():
-            cmd = [str(exe("cuda_convolution")), "--filter", filter_name, "--kernel-size", str(kernel),
+            cmd = [str(exe("seq_convolution")), "--filter", filter_name, "--kernel-size", str(kernel),
                    "--input", str(input_path), "--no-output"]
-            cuda_time = median_time(cmd)
-            speedup = seq_time / cuda_time
+            seq_time = median_time(cmd)
             records.append({
-                "implementation": "cuda",
-                "threads": "na",
-                "ranks": "na",
+                "implementation": "sequential",
+                "threads": 1,
+                "ranks": 1,
                 "image": image_name,
                 "width": width,
                 "height": height,
                 "filter": filter_name,
-                "seconds": cuda_time,
-                "speedup": speedup,
-                "efficiency": "na",
+                "seconds": seq_time,
+                "speedup": 1.0,
+                "efficiency": 1.0,
             })
+
+            if exe("omp_convolution").exists():
+                for threads in [1, 2, 4, 8, 16]:
+                    env = os.environ.copy()
+                    env["OMP_NUM_THREADS"] = str(threads)
+                    cmd = [str(exe("omp_convolution")), "--filter", filter_name, "--kernel-size", str(kernel),
+                           "--input", str(input_path), "--no-output"]
+                    omp_time = median_time(cmd, env=env)
+                    speedup = seq_time / omp_time
+                    records.append({
+                        "implementation": "openmp",
+                        "threads": threads,
+                        "ranks": 1,
+                        "image": image_name,
+                        "width": width,
+                        "height": height,
+                        "filter": filter_name,
+                        "seconds": omp_time,
+                        "speedup": speedup,
+                        "efficiency": speedup / threads,
+                    })
+
+            if exe("omp_target_convolution").exists() and omp_target_available:
+                for threads in [1, 2, 4, 8, 16]:
+                    env = os.environ.copy()
+                    env["OMP_NUM_THREADS"] = str(threads)
+                    env["OMP_TARGET_OFFLOAD"] = "MANDATORY"
+                    env.setdefault("OMP_DEFAULT_DEVICE", "0")
+                    cmd = [str(exe("omp_target_convolution")), "--filter", filter_name, "--kernel-size", str(kernel),
+                           "--input", str(input_path), "--no-output"]
+                    omp_t_time = median_time(cmd, env=env)
+                    speedup = seq_time / omp_t_time
+                    records.append({
+                        "implementation": "openmp_target",
+                        "threads": threads,
+                        "ranks": 1,
+                        "image": image_name,
+                        "width": width,
+                        "height": height,
+                        "filter": filter_name,
+                        "seconds": omp_t_time,
+                        "speedup": speedup,
+                        "efficiency": speedup / threads,
+                    })
+
+            if exe("mpi_convolution").exists():
+                for ranks in [1, 2, 4, 8]:
+                    cmd = ["mpirun", "-np", str(ranks), str(exe("mpi_convolution")),
+                           "--filter", filter_name, "--kernel-size", str(kernel),
+                           "--input", str(input_path), "--no-output"]
+                    mpi_time = median_time(cmd)
+                    speedup = seq_time / mpi_time
+                    records.append({
+                        "implementation": "mpi",
+                        "threads": 1,
+                        "ranks": ranks,
+                        "image": image_name,
+                        "width": width,
+                        "height": height,
+                        "filter": filter_name,
+                        "seconds": mpi_time,
+                        "speedup": speedup,
+                        "efficiency": speedup / ranks,
+                    })
+
+            if exe("mpi_cuda_convolution").exists():
+                for ranks in [1, 2, 4, 8]:
+                    cmd = ["mpirun", "-np", str(ranks), str(exe("mpi_cuda_convolution")),
+                           "--filter", filter_name, "--kernel-size", str(kernel),
+                           "--input", str(input_path), "--no-output"]
+                    mpi_cuda_time = median_time(cmd)
+                    speedup = seq_time / mpi_cuda_time
+                    records.append({
+                        "implementation": "mpi_cuda",
+                        "threads": 1,
+                        "ranks": ranks,
+                        "image": image_name,
+                        "width": width,
+                        "height": height,
+                        "filter": filter_name,
+                        "seconds": mpi_cuda_time,
+                        "speedup": speedup,
+                        "efficiency": speedup / ranks,
+                    })
+
+            if exe("cuda_convolution").exists():
+                cmd = [str(exe("cuda_convolution")), "--filter", filter_name, "--kernel-size", str(kernel),
+                       "--input", str(input_path), "--no-output"]
+                cuda_time = median_time(cmd)
+                speedup = seq_time / cuda_time
+                records.append({
+                    "implementation": "cuda",
+                    "threads": "na",
+                    "ranks": "na",
+                    "image": image_name,
+                    "width": width,
+                    "height": height,
+                    "filter": filter_name,
+                    "seconds": cuda_time,
+                    "speedup": speedup,
+                    "efficiency": "na",
+                })
 
     if not records:
         print("No benchmark records collected.")

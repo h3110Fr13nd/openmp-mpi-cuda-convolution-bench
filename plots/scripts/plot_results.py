@@ -48,109 +48,121 @@ def plot_efficiency(df_subset, title, filename, xcol):
 	plt.close()
 
 
-omp_df = df[df["implementation"] == "openmp"].copy()
-mpi_df = df[df["implementation"] == "mpi"].copy()
+filters = sorted(df["filter"].dropna().unique()) if "filter" in df.columns else [None]
 
-if not omp_df.empty:
-	plot_time(omp_df, "OpenMP Runtime vs Threads", "openmp_time.png", "threads")
-	plot_speedup(omp_df, "OpenMP Speedup vs Threads", "openmp_speedup.png", "threads")
-	plot_efficiency(omp_df, "OpenMP Efficiency vs Threads", "openmp_efficiency.png", "threads")
+for filter_name in filters:
+	if filter_name is None:
+		df_filter = df.copy()
+		suffix = ""
+		label = ""
+	else:
+		df_filter = df[df["filter"] == filter_name].copy()
+		suffix = f"_{filter_name}"
+		label = f" ({filter_name})"
 
-if not mpi_df.empty:
-	plot_time(mpi_df, "MPI Runtime vs Ranks", "mpi_time.png", "ranks")
-	plot_speedup(mpi_df, "MPI Speedup vs Ranks", "mpi_speedup.png", "ranks")
-	plot_efficiency(mpi_df, "MPI Efficiency vs Ranks", "mpi_efficiency.png", "ranks")
+	omp_df = df_filter[df_filter["implementation"] == "openmp"].copy()
+	mpi_df = df_filter[df_filter["implementation"] == "mpi"].copy()
 
-if "image" in df.columns:
-	best = (
-		df.copy()
-		.assign(config=lambda d: d[["threads", "ranks"]].astype(str).agg("/".join, axis=1))
-		.groupby(["image", "implementation"], as_index=False)
-		.agg(seconds=("seconds", "min"))
-	)
+	if not omp_df.empty:
+		plot_time(omp_df, f"OpenMP Runtime vs Threads{label}", f"openmp_time{suffix}.png", "threads")
+		plot_speedup(omp_df, f"OpenMP Speedup vs Threads{label}", f"openmp_speedup{suffix}.png", "threads")
+		plot_efficiency(omp_df, f"OpenMP Efficiency vs Threads{label}", f"openmp_efficiency{suffix}.png", "threads")
 
-	seq = best[best["implementation"] == "sequential"]["seconds"].rename("seq_seconds")
-	seq_map = dict(zip(best[best["implementation"] == "sequential"]["image"], seq))
-	best["speedup"] = best.apply(lambda r: seq_map.get(r["image"], 1.0) / r["seconds"], axis=1)
+	if not mpi_df.empty:
+		plot_time(mpi_df, f"MPI Runtime vs Ranks{label}", f"mpi_time{suffix}.png", "ranks")
+		plot_speedup(mpi_df, f"MPI Speedup vs Ranks{label}", f"mpi_speedup{suffix}.png", "ranks")
+		plot_efficiency(mpi_df, f"MPI Efficiency vs Ranks{label}", f"mpi_efficiency{suffix}.png", "ranks")
 
-	plt.figure(figsize=(9, 5))
-	ax = sns.barplot(data=best, x="image", y="seconds", hue="implementation")
-	plt.title("Best Runtime by Architecture (per image)")
-	add_bar_labels(ax, fmt="{:.3g}")
-	plt.tight_layout()
-	plt.savefig(output_dir / "arch_time_comparison.png", dpi=200)
-	plt.close()
+	if "image" in df_filter.columns and not df_filter.empty:
+		best = (
+			df_filter.copy()
+			.assign(config=lambda d: d[["threads", "ranks"]].astype(str).agg("/".join, axis=1))
+			.groupby(["filter", "image", "implementation"], as_index=False)
+			.agg(seconds=("seconds", "min"))
+		)
 
-	plt.figure(figsize=(9, 5))
-	ax = sns.barplot(data=best, x="image", y="speedup", hue="implementation")
-	plt.title("Best Speedup by Architecture (per image)")
-	add_bar_labels(ax, fmt="{:.2g}")
-	plt.tight_layout()
-	plt.savefig(output_dir / "arch_speedup_comparison.png", dpi=200)
-	plt.close()
+		seq = best[best["implementation"] == "sequential"]["seconds"].rename("seq_seconds")
+		seq_map = dict(zip(best[best["implementation"] == "sequential"]["image"], seq))
+		best["speedup"] = best.apply(lambda r: seq_map.get(r["image"], 1.0) / r["seconds"], axis=1)
 
-	cpu_only = best[best["implementation"].isin(["sequential", "openmp", "mpi"])]
-	if not cpu_only.empty:
 		plt.figure(figsize=(9, 5))
-		ax = sns.barplot(data=cpu_only, x="image", y="seconds", hue="implementation")
-		plt.title("CPU-only Runtime Comparison")
+		ax = sns.barplot(data=best, x="image", y="seconds", hue="implementation")
+		plt.title(f"Best Runtime by Architecture (per image){label}")
 		add_bar_labels(ax, fmt="{:.3g}")
 		plt.tight_layout()
-		plt.savefig(output_dir / "cpu_only_runtime.png", dpi=200)
+		plt.savefig(output_dir / f"arch_time_comparison{suffix}.png", dpi=200)
 		plt.close()
 
 		plt.figure(figsize=(9, 5))
-		ax = sns.barplot(data=cpu_only, x="image", y="speedup", hue="implementation")
-		plt.title("CPU-only Speedup Comparison")
+		ax = sns.barplot(data=best, x="image", y="speedup", hue="implementation")
+		plt.title(f"Best Speedup by Architecture (per image){label}")
 		add_bar_labels(ax, fmt="{:.2g}")
 		plt.tight_layout()
-		plt.savefig(output_dir / "cpu_only_speedup.png", dpi=200)
+		plt.savefig(output_dir / f"arch_speedup_comparison{suffix}.png", dpi=200)
 		plt.close()
 
-	gpu_only = best[best["implementation"].isin(["cuda", "openmp_target", "mpi_cuda"])]
-	if not gpu_only.empty:
-		plt.figure(figsize=(9, 5))
-		ax = sns.barplot(data=gpu_only, x="image", y="seconds", hue="implementation")
-		plt.title("GPU-only Runtime Comparison")
-		add_bar_labels(ax, fmt="{:.3g}")
-		plt.tight_layout()
-		plt.savefig(output_dir / "gpu_only_runtime.png", dpi=200)
-		plt.close()
+		cpu_only = best[best["implementation"].isin(["sequential", "openmp", "mpi"])]
+		if not cpu_only.empty:
+			plt.figure(figsize=(9, 5))
+			ax = sns.barplot(data=cpu_only, x="image", y="seconds", hue="implementation")
+			plt.title(f"CPU-only Runtime Comparison{label}")
+			add_bar_labels(ax, fmt="{:.3g}")
+			plt.tight_layout()
+			plt.savefig(output_dir / f"cpu_only_runtime{suffix}.png", dpi=200)
+			plt.close()
 
-		plt.figure(figsize=(9, 5))
-		ax = sns.barplot(data=gpu_only, x="image", y="speedup", hue="implementation")
-		plt.title("GPU-only Speedup Comparison")
-		add_bar_labels(ax, fmt="{:.2g}")
-		plt.tight_layout()
-		plt.savefig(output_dir / "gpu_only_speedup.png", dpi=200)
-		plt.close()
+			plt.figure(figsize=(9, 5))
+			ax = sns.barplot(data=cpu_only, x="image", y="speedup", hue="implementation")
+			plt.title(f"CPU-only Speedup Comparison{label}")
+			add_bar_labels(ax, fmt="{:.2g}")
+			plt.tight_layout()
+			plt.savefig(output_dir / f"cpu_only_speedup{suffix}.png", dpi=200)
+			plt.close()
 
-	cpu_best = (
-		best[best["implementation"].isin(["sequential", "openmp", "mpi"])]
-		.groupby("image", as_index=False)
-		.agg(seconds=("seconds", "min"))
-		.assign(implementation="cpu_best")
-	)
-	cuda_best = best[best["implementation"] == "cuda"].copy()
+		gpu_only = best[best["implementation"].isin(["cuda", "openmp_target", "mpi_cuda"])]
+		if not gpu_only.empty:
+			plt.figure(figsize=(9, 5))
+			ax = sns.barplot(data=gpu_only, x="image", y="seconds", hue="implementation")
+			plt.title(f"GPU-only Runtime Comparison{label}")
+			add_bar_labels(ax, fmt="{:.3g}")
+			plt.tight_layout()
+			plt.savefig(output_dir / f"gpu_only_runtime{suffix}.png", dpi=200)
+			plt.close()
 
-	if not cuda_best.empty:
-		cpu_gpu = pd.concat([cpu_best, cuda_best], ignore_index=True)
-		plt.figure(figsize=(9, 5))
-		ax = sns.barplot(data=cpu_gpu, x="image", y="seconds", hue="implementation")
-		plt.title("CPU Best vs CUDA Runtime")
-		add_bar_labels(ax, fmt="{:.3g}")
-		plt.tight_layout()
-		plt.savefig(output_dir / "cpu_vs_cuda_runtime.png", dpi=200)
-		plt.close()
+			plt.figure(figsize=(9, 5))
+			ax = sns.barplot(data=gpu_only, x="image", y="speedup", hue="implementation")
+			plt.title(f"GPU-only Speedup Comparison{label}")
+			add_bar_labels(ax, fmt="{:.2g}")
+			plt.tight_layout()
+			plt.savefig(output_dir / f"gpu_only_speedup{suffix}.png", dpi=200)
+			plt.close()
 
-		merged = cpu_best.merge(cuda_best, on="image", suffixes=("_cpu", "_cuda"))
-		merged["cpu_over_cuda"] = merged["seconds_cpu"] / merged["seconds_cuda"]
-		plt.figure(figsize=(9, 5))
-		ax = sns.barplot(data=merged, x="image", y="cpu_over_cuda")
-		plt.title("CPU Best / CUDA Speedup Ratio")
-		add_bar_labels(ax, fmt="{:.2g}")
-		plt.tight_layout()
-		plt.savefig(output_dir / "cpu_vs_cuda_speedup.png", dpi=200)
-		plt.close()
+		cpu_best = (
+			best[best["implementation"].isin(["sequential", "openmp", "mpi"])]
+			.groupby("image", as_index=False)
+			.agg(seconds=("seconds", "min"))
+			.assign(implementation="cpu_best")
+		)
+		cuda_best = best[best["implementation"] == "cuda"].copy()
+
+		if not cuda_best.empty:
+			cpu_gpu = pd.concat([cpu_best, cuda_best], ignore_index=True)
+			plt.figure(figsize=(9, 5))
+			ax = sns.barplot(data=cpu_gpu, x="image", y="seconds", hue="implementation")
+			plt.title(f"CPU Best vs CUDA Runtime{label}")
+			add_bar_labels(ax, fmt="{:.3g}")
+			plt.tight_layout()
+			plt.savefig(output_dir / f"cpu_vs_cuda_runtime{suffix}.png", dpi=200)
+			plt.close()
+
+			merged = cpu_best.merge(cuda_best, on="image", suffixes=("_cpu", "_cuda"))
+			merged["cpu_over_cuda"] = merged["seconds_cpu"] / merged["seconds_cuda"]
+			plt.figure(figsize=(9, 5))
+			ax = sns.barplot(data=merged, x="image", y="cpu_over_cuda")
+			plt.title(f"CPU Best / CUDA Speedup Ratio{label}")
+			add_bar_labels(ax, fmt="{:.2g}")
+			plt.tight_layout()
+			plt.savefig(output_dir / f"cpu_vs_cuda_speedup{suffix}.png", dpi=200)
+			plt.close()
 
 print(f"Plots written to {output_dir}")

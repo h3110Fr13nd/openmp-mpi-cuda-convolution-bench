@@ -8,3 +8,15 @@ wheels/
 
 # Virtual environments
 .venv
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+.katex_header.html

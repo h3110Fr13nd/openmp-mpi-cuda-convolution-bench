@@ -1,0 +1,28 @@
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+
+RUN apt-get update && apt-get install -y \
+    git wget ca-certificates \
+    cmake ninja-build make g++ \
+    openmpi-bin libopenmpi-dev python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch llvmorg-18.1.8 https://github.com/llvm/llvm-project.git /opt/llvm-project \
+    && cmake -S /opt/llvm-project/llvm -B /opt/llvm-build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DLLVM_ENABLE_PROJECTS="clang;openmp" \
+        -DLLVM_TARGETS_TO_BUILD="X86;NVPTX" \
+        -DOPENMP_ENABLE_LIBOMPTARGET=ON \
+        -DLIBOMPTARGET_ENABLE_DEBUG=OFF \
+        -DCMAKE_INSTALL_PREFIX=/opt/llvm \
+    && ninja -C /opt/llvm-build install \
+    && rm -rf /opt/llvm-project /opt/llvm-build
+
+ENV PATH=/opt/llvm/bin:$PATH
+ENV LD_LIBRARY_PATH=/opt/llvm/lib:$LD_LIBRARY_PATH
+
+WORKDIR /workspace
+
+ENV OMPI_ALLOW_RUN_AS_ROOT=1
+ENV OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+
+CMD ["bash"]
